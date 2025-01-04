@@ -1,108 +1,140 @@
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
-import audioop
+import random
+from myserver import server_on  # นำเข้า server_on จากไฟล์ myserver.py
 
+load_dotenv()
 
-from mimetypes import server_no  # เปลี่ยนจาก server_on เป็น server_no
-
-
-GUILD_ID = 1320391859322753075  # ใส่ ID เซิร์ฟเวอร์ (Guild ID)
-CHANNEL_ID = 1320391859322753082  # ใส่ ID ห้องที่ใช้ส่งข้อความ (Channel ID)
-HISTORY_CHANNEL_ID = 1320391859754897480 # ID ห้องสำหรับส่งประวัติการรับยศ
-ROLE_ID = 1324684543709413498  # ใส่ ID ยศ (Role ID)
+GUILD_ID = 1320391859322753075 
+CHANNEL_ID = 1320391859754897484  
+WEBHOOK_URL = 'https://discord.com/api/webhooks/1324846311526109285/i9iwmQ6SBJxSx7V5ewfVYbXnbGI_i_qAc_bBD6aZFsX8jCE_M0RyLj3JNrYHCibrLQ-f'  
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+streaming_status = [
+    "Playing a game 🎮",
+    "Chatting with users 💬",
+    "Helping with support tickets 📝",
+    "SHGOP SHOP NO.1 🎥",
+    "Playing music 🎶"
+]
+
+@tasks.loop(seconds=30)
+async def update_stream_status():
+    status = random.choice(streaming_status)
+    await bot.change_presence(activity=discord.Game(name=status))
 
 @bot.event
 async def on_ready():
-    print(f'We have logged in as {bot.user}')
-
-
-    stream_url = 'https://www.twitch.tv/your_channel'  
-    stream_status = discord.Streaming(name="กำลังสตรีมเกมสนุกๆ!", url=stream_url)
-
-
-    await bot.change_presence(activity=stream_status)
-
+    print(f'Logged in as {bot.user}')
+    update_stream_status.start()
+    server_on()  # เรียกใช้งานฟังก์ชัน server_on จาก myserver.py
 
     channel = bot.get_channel(CHANNEL_ID)
-
-    if channel is not None:
-        button = discord.ui.Button(style=discord.ButtonStyle.primary, label="รับยศ✨", custom_id="give_role", emoji="🎮")
-        view = discord.ui.View()
-        view.add_item(button)
-
-
+    if channel:
         embed = discord.Embed(
-            title="🎉 คลิกปุ่มด้านล่างเพื่อรับยศ! 🎮",
-            description="กดปุ่มด้านล่างเพื่อรับยศหรือยกเลิกยศของคุณ!",
+            title="🧊 สวัสดี! 🥙",
+            description="🍟>ตอนนี้บอทของเราพร้อมให้บริการแล้ว! ⚡\n\n"
+                        "🧇หากคุณต้องการเปิดตั๋วเพื่อคุยกับแอดมิน โปรดกดปุ่มด้านล่าง 👇\n\n"
+                        "🍣หากคุณพบปัญหาใด ๆ กดปุ่ม 'แจ้งปัญหา' เพื่อแจ้งได้เลย!👁",
             color=discord.Color.blue()
         )
-        embed.set_footer(text="สนุกกับการเล่นเกมและการรับยศ!", icon_url="https://example.com/your-footer-icon.png")
-        embed.set_thumbnail(url="https://th.bing.com/th/id/R.37b22ed731027b6984fba0f935b5b0d4?rik=d2Ke2x8t6gGwZA&pid=ImgRaw&r=0")  # เพิ่มภาพเล็กหรือ GIF ที่มุมขวาบน
-        embed.set_image(url="https://i.pinimg.com/originals/b0/bd/ab/b0bdabdb366b66f6840405500b1b5d82.gif")  # เพิ่ม GIF ด้านล่าง
+        embed.set_image(url="https://th.bing.com/th/id/OIP.1mofGys7_n3_uhqIAkAnlgHaEK?rs=1&pid=ImgDetMain")  
+        embed.set_footer(text="ทีมแอดมินพร้อมช่วยเหลือคุณ!")
+        embed.set_thumbnail(url="https://th.bing.com/th/id/OIP.R8NNB53byP0myVXy_bcJ9AHaD4?rs=1&pid=ImgDetMain")  
 
-
+        view = TicketView()
         await channel.send(embed=embed, view=view)
-    else:
-        print(f"ไม่พบห้องที่มี ID {CHANNEL_ID}")
 
-@bot.event
-async def on_interaction(interaction):
-    if interaction.type == discord.InteractionType.component:
-        if interaction.data['custom_id'] == 'give_role':
-            user = interaction.user
-            role = discord.utils.get(user.guild.roles, id=ROLE_ID)
+# คลาสที่ใช้สำหรับเปิดตั๋วและรายงานปัญหา
+class TicketView(View):
+    def __init__(self):
+        super().__init__()
 
+    @discord.ui.button(label="🤍เปิดตั๋วคุยแอดมิน❤", style=discord.ButtonStyle.green)
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        user_name = interaction.user.name
 
-            embed = discord.Embed(title="🚀 สถานะยศของคุณ", color=discord.Color.green())
+        guild = interaction.guild
+        category = discord.utils.get(guild.categories, name="Support") 
+        
+        if not category:
+            category = await guild.create_category("Support")
 
+        channel = await guild.create_text_channel(
+            f"ticket-{interaction.user.name}",
+            category=category,
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),  
+                interaction.user: discord.PermissionOverwrite(read_messages=True), 
+            }
+        )
 
-            if role in user.roles:
+        embed = discord.Embed(
+            title=f"❤เปิดตั๋วคุยแอดมิน🤍",
+            description=f"สวัสดี {interaction.user.mention} 🧇คุณสามารถคุยกับแอดมินที่นี่ได้เลย👑",
+            color=discord.Color.green()
+        )
+        embed.set_image(url="https://th.bing.com/th/id/OIP.d1L3BTZnO9yxkNz740yymAHaEK?rs=1&pid=ImgDetMain")  
+        embed.set_footer(text=f"ID ของผู้ใช้: {user_id}")
+        embed.set_thumbnail(url="https://th.bing.com/th/id/OIP.R8NNB53byP0myVXy_bcJ9AHaD4?rs=1&pid=ImgDetMain")  
 
-                await user.remove_roles(role)
-                embed.description = f"คุณได้ยกเลิกยศ **{role.name}** แล้ว! 😔"
-                embed.color = discord.Color.red()
-                embed.set_footer(text="ยกเลิกยศเรียบร้อยแล้ว! ❌")
-                embed.set_image(url="https://th.bing.com/th/id/OIP.ueBXoQMok9mvuj3fjzfYPwHaEK?rs=1&pid=ImgDetMain")  # เพิ่ม GIF เมื่อยกเลิกยศ
-            else:
+        await channel.send(embed=embed)
 
-                await user.add_roles(role)
-                embed.description = f"คุณได้รับยศ **{role.name}** แล้ว! 🎉"
-                embed.color = discord.Color.green()
-                embed.set_footer(text="คุณได้รับยศแล้ว! ✅")
-                embed.set_image(url="https://th.bing.com/th/id/OIP.ueBXoQMok9mvuj3fjzfYPwHaEK?rs=1&pid=ImgDetMain")  # เพิ่ม GIF เมื่อรับยศ
+        close_button = Button(label="🥗ปิดตั๋ว❄", style=discord.ButtonStyle.red)
+        
+        async def close_ticket(interaction: discord.Interaction):
+            await channel.send("💞ตั๋วนี้จะถูกปิดเนื่องจากคำขอของผู้ใช้ หรือแอดมิน🍜")
+            await channel.delete()
 
+        close_button.callback = close_ticket
 
-            await user.send(embed=embed)
+        await channel.send("💩หากคุณต้องการปิดตั๋วนี้ กรุณากดปุ่มด้านล่าง💩", view=View().add_item(close_button))
 
+        await interaction.response.send_message("❄🧊คุณได้เปิดตั๋วแล้ว! รอแอดมินตอบกลับ🧊", ephemeral=True)
 
-            await interaction.response.send_message("(❤´艸｀❤)! 🎮", ephemeral=True)
+    @discord.ui.button(label="🍤แจ้งปัญหา🔞", style=discord.ButtonStyle.blurple)
+    async def report_issue(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = IssueReportModal()
+        await interaction.response.send_modal(modal)
 
+class IssueReportModal(Modal):
+    def __init__(self):
+        super().__init__(title="🥪แจ้งปัญหาของคุณ🥠")
 
-            history_channel = bot.get_channel(HISTORY_CHANNEL_ID)
-            if history_channel is not None:
-                history_embed = discord.Embed(
-                    title="📜 ประวัติการรับยศ",
-                    description=f"**{user.name}** ได้รับยศ/ยกเลิกยศ **{role.name}**",
-                    color=discord.Color.purple()
-                )
-                history_embed.set_thumbnail(url=user.avatar.url)  # แสดงรูปโปรไฟล์ผู้ใช้ในประวัติการรับยศ
-                history_embed.set_footer(text=f"ID ผู้ใช้: {user.id}", icon_url=user.avatar.url)  # แสดง ID ผู้ใช้
-                history_embed.set_image(url="https://th.bing.com/th/id/OIP.Mm8ebbt4kBbv2V3wPKcxQQAAAA?rs=1&pid=ImgDetMain")  # เพิ่ม GIF ในประวัติ
-                await history_channel.send(embed=history_embed)
-            else:
-                print(f"ไม่พบห้องประวัติที่มี ID {HISTORY_CHANNEL_ID}")
+        self.issue_input = TextInput(
+            label="กรุณากรอกข้อความปัญหาของคุณ",
+            style=discord.TextStyle.paragraph,
+            placeholder="กรอกข้อความของคุณที่นี่...",
+            required=True,
+            max_length=1000
+        )
+        self.add_item(self.issue_input)
 
+    async def callback(self, interaction: discord.Interaction):
+        issue_message = self.issue_input.value 
 
-server_no()  # เรียกใช้งานฟังก์ชัน server_no แทน server_on
+        webhook = discord.Webhook.from_url(WEBHOOK_URL, adapter=discord.RequestsWebhookAdapter())
+        embed = discord.Embed(
+            title="🍖แจ้งปัญหาใหม่🧇",
+            description=issue_message,
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"โดย {interaction.user.name}")
+        embed.set_thumbnail(url="https://th.bing.com/th/id/OIP.R8NNB53byP0myVXy_bcJ9AHaD4?rs=1&pid=ImgDetMain")  
 
-bot.run(os.getenv('TOKEN'))
-# เครดิตร้าน SHGOX 
-# ลิ้ง ลืมใส่
+        await webhook.send(embed=embed)
+
+        await interaction.response.send_message("ปัญหาของคุณถูกแจ้งเรียบร้อยแล้ว! ขอบคุณที่แจ้งมา.", ephemeral=True)
+
+# เรียกใช้งาน server_on
+server_on()
+
+# ใช้ TOKEN ที่โหลดจาก .env
+bot.run(os.getenv("TOKEN"))
